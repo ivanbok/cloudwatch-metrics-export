@@ -26,5 +26,8 @@ def lambda_handler(event, context):
         Statistics=statistics,
         Unit=unit
         )
-    result = response["Datapoints"][0]["Average"]
-    return json.dumps(result)
+    datapoints = response["Datapoints"]
+    for datapoint in datapoints:
+        datapoint["Timestamp"] = datapoint["Timestamp"].strftime("%m/%d/%Y, %H:%M:%S")
+
+    return json.dumps(datapoints)
