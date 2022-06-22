@@ -24,7 +24,28 @@ Resources:
   # Create EventBridge Rule ##############################################
   ########################################################################
 
+  InvokeLambdaHourly: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "To Invoke Lambda once per hour"
+      ScheduleExpression: "rate(60 minutes)"
+      State: "ENABLED"
+      Targets: 
+        - 
+          Arn: 
+            !GetAtt RDSGetMetricsLambda.Arn
+          Id: "RDSGetMetricsLambda"
 
+  PermissionForEventsToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref RDSGetMetricsLambda
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: 
+        Fn::GetAtt: 
+          - "InvokeLambdaHourly"
+          - "Arn"
 
   ########################################################################
   ## Create Lambda Functions and Associated IAM Resources ################
@@ -113,7 +134,7 @@ Resources:
                   "Name": "DBInstanceIdentifier",
                   "Value": rds_instance_identifier},
                   ]
-              frequency = datetime.timedelta(hours=2)
+              frequency = datetime.timedelta(hours=1)
               endTime=datetime.datetime.now()
               startTime = endTime - frequency
               period=300
