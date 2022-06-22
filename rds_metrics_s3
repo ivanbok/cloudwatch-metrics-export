@@ -178,8 +178,8 @@ Resources:
               
               startTimeStr = startTime.strftime("%m-%d-%Y_%H-%M-%S")
               endTimeStr = endTime.strftime("%m-%d-%Y_%H-%M-%S")
-              filename = 'rds-cpu-metrics_' + startTimeStr + '_' + endTimeStr + '.json'
-              s3object = s3.Object(s3_bucket_name,  filename)
+              filename = 'rds-${metric}' + startTimeStr + '_' + endTimeStr + '.json'
+              s3object = s3.Object(s3_bucket_name, filename)
 
               s3object.put(
                   Body=(bytes(data.encode('UTF-8')))
