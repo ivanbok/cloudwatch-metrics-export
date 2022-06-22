@@ -16,7 +16,7 @@ def lambda_handler(event, context):
         "Name": "DBInstanceIdentifier",
         "Value": rds_instance_identifier},
         ]
-    frequency = datetime.timedelta(hours=2)
+    frequency = datetime.timedelta(hours=1)
     endTime=datetime.datetime.now()
     startTime = endTime - frequency
     period=300
