@@ -2,7 +2,7 @@
 AWSTemplateFormatVersion: 2010-09-09
 
 Parameters:
-  rds_instance_identifier:
+  rdsinstanceidentifier:
     Type: String
     Description: Enter the DB identifier of your RDS instance to monitor
   metric:
@@ -138,7 +138,7 @@ Resources:
 
           def lambda_handler(event, context):
               s3_bucket_name = '${S3Bucket}'
-              rds_instance_identifier = '${rds_instance_identifier}' # Replace with your DB identifier
+              rds_instance_identifier = '${rdsinstanceidentifier}' # Replace with your DB identifier
               
               dimensions = [
                   {
