@@ -5,6 +5,18 @@ Parameters:
   rds_instance_identifier:
     Type: String
     Description: Enter the DB identifier of your RDS instance to monitor
+  metric:
+    Type: String
+    Default: CPUUtilization
+    AllowedValues:
+      - CPUUtilization
+      - ReadLatency
+      - WriteLatency
+      - ReadThroughput
+      - WriteThroughput
+      - ReadIOPS
+      - WriteIOPS
+    Description: Select the metric you would like reported.
 
 Resources:
   ########################################################################
@@ -23,7 +35,6 @@ Resources:
   ########################################################################
   # Create EventBridge Rule ##############################################
   ########################################################################
-
   InvokeLambdaHourly: 
     Type: AWS::Events::Rule
     Properties: 
@@ -123,7 +134,7 @@ Resources:
           cloudwatch = boto3.resource('cloudwatch')
           s3 = boto3.resource('s3')
 
-          metric = cloudwatch.Metric('AWS/RDS','CPUUtilization')
+          metric = cloudwatch.Metric('AWS/RDS','${metric}')
 
           def lambda_handler(event, context):
               s3_bucket_name = '${S3Bucket}'
@@ -139,7 +150,17 @@ Resources:
               startTime = endTime - frequency
               period=300
               statistics = ['Average']
-              unit= 'Percent'
+
+              if ${metric} == "CPUUtilization"
+                unit = 'Percent'
+              elif ${metric} == "ReadLatency" or ${metric} == "WriteLatency":
+                unit = 'Milliseconds'
+              elif ${metric} == "ReadThroughput" or ${metric} == "WriteThroughput":
+                unit = 'MB/Second'
+              elif ${metric} == "ReadIOPS" or or ${metric} == "WriteIOPS"
+                unit = 'Count/Second'
+              else:
+                unit = ''
 
               response = metric.get_statistics(
                   Dimensions=dimensions,
