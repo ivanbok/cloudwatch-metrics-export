@@ -1,6 +1,11 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 
+Parameters:
+  rds_instance_identifier:
+    Type: String
+    Description: Enter the DB identifier of your RDS instance to monitor
+
 Resources:
   ########################################################################
   # Create S3 Bucket to dump metrics data ################################
@@ -89,7 +94,7 @@ Resources:
           - "Arn"
       Runtime: "python3.9"
       Code: 
-        ZipFile: |
+        ZipFile: !Sub |
           import json
           import boto3
           import datetime
@@ -100,8 +105,8 @@ Resources:
           metric = cloudwatch.Metric('AWS/RDS','CPUUtilization')
 
           def lambda_handler(event, context):
-              s3_bucket_name = 'rds-cw-metrics' # Replace with your bucket name
-              rds_instance_identifier = 'mysql-test2' # Replace with your DB identifier
+              s3_bucket_name = '${S3Bucket}'
+              rds_instance_identifier = '${rds_instance_identifier}' # Replace with your DB identifier
               
               dimensions = [
                   {
