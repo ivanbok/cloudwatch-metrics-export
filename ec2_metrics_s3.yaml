@@ -1,0 +1,189 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  rdsinstanceidentifier:
+    Type: String
+    Description: Enter the DB identifier of your RDS instance to monitor
+  metric:
+    Type: String
+    Default: CPUUtilization
+    AllowedValues:
+      - CPUUtilization
+      - ReadLatency
+      - WriteLatency
+      - ReadThroughput
+      - WriteThroughput
+      - ReadIOPS
+      - WriteIOPS
+    Description: Select the metric you would like reported.
+
+Resources:
+  ########################################################################
+  # Create S3 Bucket to dump metrics data ################################
+  ########################################################################
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: 
+          -
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+  
+  ########################################################################
+  # Create EventBridge Rule ##############################################
+  ########################################################################
+  InvokeLambdaHourly: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "To Invoke Lambda once per hour"
+      ScheduleExpression: "rate(60 minutes)"
+      State: "ENABLED"
+      Targets: 
+        - 
+          Arn: 
+            !GetAtt RDSGetMetricsLambda.Arn
+          Id: "RDSGetMetricsLambda"
+
+  PermissionForEventsToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !Ref RDSGetMetricsLambda
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: 
+        Fn::GetAtt: 
+          - "InvokeLambdaHourly"
+          - "Arn"
+
+  ########################################################################
+  ## Create Lambda Functions and Associated IAM Resources ################
+  ########################################################################
+  # Create Lambda Execution Role that allows it to call CloudWatch and S3
+  LambdaCloudWatchRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - "s3:*"
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - "logs:CreateLogGroup"
+            - "logs:CreateLogStream"
+            - "logs:PutLogEvents"
+            Resource: "*"
+      - PolicyName: CloudWatchFullAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Action:
+            - autoscaling:Describe*
+            - cloudwatch:*
+            - logs:*
+            - sns:*
+            - iam:GetPolicy
+            - iam:GetPolicyVersion
+            - iam:GetRole
+            Effect: Allow
+            Resource: "*"
+      - PolicyName: AmazonS3FullAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Action:
+            - s3:*
+            - s3-object-lambda:*
+            Effect: Allow
+            Resource: "*"
+
+  # Create Lambda Function to Get RDS Metrics and Dump to S3
+  RDSGetMetricsLambda: 
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.lambda_handler"
+      FunctionName: "rds_getmetrics"
+      Role: 
+        Fn::GetAtt: 
+          - "LambdaCloudWatchRole"
+          - "Arn"
+      Runtime: "python3.9"
+      Code: 
+        ZipFile: !Sub |
+          import json
+          import boto3
+          import datetime
+
+          cloudwatch = boto3.resource('cloudwatch')
+          s3 = boto3.resource('s3')
+
+          metric = cloudwatch.Metric('AWS/RDS','${metric}')
+
+          def lambda_handler(event, context):
+              s3_bucket_name = '${S3Bucket}'
+              rds_instance_identifier = '${rdsinstanceidentifier}' # Replace with your DB identifier
+              
+              dimensions = [
+                  {
+                  "Name": "DBInstanceIdentifier",
+                  "Value": rds_instance_identifier},
+                  ]
+              frequency = datetime.timedelta(hours=1)
+              endTime=datetime.datetime.now()
+              startTime = endTime - frequency
+              period=300
+              statistics = ['Average']
+
+              if "${metric}" == "CPUUtilization":
+                unit = 'Percent'
+              elif "${metric}" == "ReadLatency" or "${metric}" == "WriteLatency":
+                unit = 'Milliseconds'
+              elif "${metric}" == "ReadThroughput" or "${metric}" == "WriteThroughput":
+                unit = 'MB/Second'
+              elif "${metric}" == "ReadIOPS" or "${metric}" == "WriteIOPS":
+                unit = 'Count/Second'
+              else:
+                unit = ''
+
+              response = metric.get_statistics(
+                  Dimensions=dimensions,
+                  StartTime=startTime,
+                  EndTime=endTime,
+                  Period=period,
+                  Statistics=statistics,
+                  Unit=unit
+                  )
+              datapoints = response["Datapoints"]
+              for datapoint in datapoints:
+                  datapoint["Timestamp"] = datapoint["Timestamp"].strftime("%m/%d/%Y, %H:%M:%S")
+              
+              data = json.dumps(datapoints)
+              
+              startTimeStr = startTime.strftime("%m-%d-%Y_%H-%M-%S")
+              endTimeStr = endTime.strftime("%m-%d-%Y_%H-%M-%S")
+              filename = 'rds-${metric}' + startTimeStr + '_' + endTimeStr + '.json'
+              s3object = s3.Object(s3_bucket_name, filename)
+
+              s3object.put(
+                  Body=(bytes(data.encode('UTF-8')))
+              )
+              
+              return data
+
