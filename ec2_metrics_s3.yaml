@@ -2,20 +2,18 @@
 AWSTemplateFormatVersion: 2010-09-09
 
 Parameters:
-  rdsinstanceidentifier:
+  ec2instanceid:
     Type: String
-    Description: Enter the DB identifier of your RDS instance to monitor
+    Description: Enter the Instance ID of your EC2 instance to monitor
   metric:
     Type: String
     Default: CPUUtilization
     AllowedValues:
       - CPUUtilization
-      - ReadLatency
-      - WriteLatency
-      - ReadThroughput
-      - WriteThroughput
-      - ReadIOPS
-      - WriteIOPS
+      - NetworkPacketsIn
+      - NetworkPacketsOut
+      - DiskReadOps
+      - DiskWriteOps
     Description: Select the metric you would like reported.
 
 Resources:
@@ -44,13 +42,13 @@ Resources:
       Targets: 
         - 
           Arn: 
-            !GetAtt RDSGetMetricsLambda.Arn
-          Id: "RDSGetMetricsLambda"
+            !GetAtt EC2GetMetricsLambda.Arn
+          Id: "EC2GetMetricsLambda"
 
   PermissionForEventsToInvokeLambda: 
     Type: AWS::Lambda::Permission
     Properties: 
-      FunctionName: !Ref RDSGetMetricsLambda
+      FunctionName: !Ref EC2GetMetricsLambda
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
       SourceArn: 
@@ -114,12 +112,12 @@ Resources:
             Effect: Allow
             Resource: "*"
 
-  # Create Lambda Function to Get RDS Metrics and Dump to S3
-  RDSGetMetricsLambda: 
+  # Create Lambda Function to Get EC2 Metrics and Dump to S3
+  EC2GetMetricsLambda: 
     Type: "AWS::Lambda::Function"
     Properties: 
       Handler: "index.lambda_handler"
-      FunctionName: "rds_getmetrics"
+      FunctionName: "ec2_getmetrics"
       Role: 
         Fn::GetAtt: 
           - "LambdaCloudWatchRole"
@@ -134,16 +132,16 @@ Resources:
           cloudwatch = boto3.resource('cloudwatch')
           s3 = boto3.resource('s3')
 
-          metric = cloudwatch.Metric('AWS/RDS','${metric}')
+          metric = cloudwatch.Metric('AWS/EC2','${metric}')
 
           def lambda_handler(event, context):
               s3_bucket_name = '${S3Bucket}'
-              rds_instance_identifier = '${rdsinstanceidentifier}' # Replace with your DB identifier
+              ec2_instance_id = '${ec2instanceid}' # Replace with your DB identifier
               
               dimensions = [
                   {
-                  "Name": "DBInstanceIdentifier",
-                  "Value": rds_instance_identifier},
+                  "Name": "InstanceId",
+                  "Value": ec2_instance_id},
                   ]
               frequency = datetime.timedelta(hours=1)
               endTime=datetime.datetime.now()
@@ -153,12 +151,10 @@ Resources:
 
               if "${metric}" == "CPUUtilization":
                 unit = 'Percent'
-              elif "${metric}" == "ReadLatency" or "${metric}" == "WriteLatency":
-                unit = 'Milliseconds'
-              elif "${metric}" == "ReadThroughput" or "${metric}" == "WriteThroughput":
-                unit = 'MB/Second'
-              elif "${metric}" == "ReadIOPS" or "${metric}" == "WriteIOPS":
-                unit = 'Count/Second'
+              elif "${metric}" == "DiskReadOps" or "${metric}" == "DiskWriteOps":
+                unit = 'Count/5 min'
+              elif "${metric}" == "NetworkPacketsIn" or "${metric}" == "NetworkPacketsOut":
+                unit = 'Count/5 min'
               else:
                 unit = ''
 
@@ -178,7 +174,7 @@ Resources:
               
               startTimeStr = startTime.strftime("%m-%d-%Y_%H-%M-%S")
               endTimeStr = endTime.strftime("%m-%d-%Y_%H-%M-%S")
-              filename = 'rds-${metric}' + startTimeStr + '_' + endTimeStr + '.json'
+              filename = 'ec2-${metric}' + startTimeStr + '_' + endTimeStr + '.json'
               s3object = s3.Object(s3_bucket_name, filename)
 
               s3object.put(
